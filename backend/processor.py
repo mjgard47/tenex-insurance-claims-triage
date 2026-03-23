@@ -77,6 +77,7 @@ def _triage(claim: ClaimInput, fraud_signals: list[str]) -> dict:
 
     if is_fast_track:
         payout_est = max(claim.damage_amount_estimate - claim.deductible, 0)
+        fault_label = claim.fault_determination.value.replace("_", " ")
         return {
             "decision": Decision.FAST_TRACK,
             "queue": "Fast-Track Queue",
@@ -85,14 +86,33 @@ def _triage(claim: ClaimInput, fraud_signals: list[str]) -> dict:
             "estimated_payout_range": f"${payout_est:,.2f} (pending adjuster verification)",
             "confidence_score": round(random.uniform(0.90, 0.97), 2),
             "reasoning": (
-                "Simple, well-documented, low-dollar claim — routed to fast-track queue "
-                "for expedited processing. Other party at fault, police report on file, "
-                "clean claims history."
+                f"Fast-track: all criteria met. "
+                f"Damage ${claim.damage_amount_estimate:,.2f} < $5,000 threshold. "
+                f"Fault: {fault_label}. "
+                f"Police report: filed. "
+                f"Prior claims: {claim.prior_claims_count} (threshold: 1). "
+                f"No fraud signals detected."
             ),
             "escalation_reason": None,
         }
 
-    # Standard review (everything else)
+    # Standard review (everything else) — explain which fast-track criteria failed
+    failed_criteria = []
+    if claim.damage_amount_estimate >= 5000:
+        failed_criteria.append(
+            f"damage ${claim.damage_amount_estimate:,.2f} >= $5,000 threshold"
+        )
+    if claim.fault_determination not in ["other_party", "shared"]:
+        failed_criteria.append(
+            f"fault: {claim.fault_determination.value.replace('_', ' ')} (requires other party or shared)"
+        )
+    if not claim.police_report_filed:
+        failed_criteria.append("no police report filed")
+    if claim.prior_claims_count > 1:
+        failed_criteria.append(
+            f"prior claims: {claim.prior_claims_count} (threshold: 1)"
+        )
+
     return {
         "decision": Decision.STANDARD_REVIEW,
         "queue": "Standard Review Queue",
@@ -101,9 +121,9 @@ def _triage(claim: ClaimInput, fraud_signals: list[str]) -> dict:
         "estimated_payout_range": "TBD pending investigation",
         "confidence_score": round(random.uniform(0.70, 0.85), 2),
         "reasoning": (
-            "Moderate complexity claim requires standard adjuster investigation. "
-            f"Damage estimate: ${claim.damage_amount_estimate:,.2f}, "
-            f"fault: {claim.fault_determination.replace('_', ' ')}."
+            f"Standard review: did not meet fast-track criteria. "
+            + ". ".join(f"Failed: {c}" for c in failed_criteria)
+            + f". No escalation triggers found."
         ),
         "escalation_reason": None,
     }

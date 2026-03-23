@@ -11,6 +11,9 @@ class CollisionType(str, Enum):
     ROLLOVER = "rollover"
     SINGLE_VEHICLE = "single_vehicle"
     MULTI_VEHICLE = "multi_vehicle"
+    SIDESWIPE = "sideswipe"
+    HIT_AND_RUN = "hit_and_run"
+    INTERSECTION = "intersection"
 
 
 class FaultDetermination(str, Enum):

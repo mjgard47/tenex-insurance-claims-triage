@@ -1,4 +1,7 @@
 import ClaimUpload from "./components/ClaimUpload";
+import BatchUpload from "./components/BatchUpload";
+import Dashboard from "./components/Dashboard";
+import QueueView from "./components/QueueView";
 
 function App() {
   return (
@@ -22,22 +25,26 @@ function App() {
           <ClaimUpload />
         </section>
 
-        {/* Results Section */}
+        {/* Batch Upload Section */}
         <section className="rounded-lg bg-white p-6 shadow">
-          <h2 className="text-xl font-semibold text-gray-800">
-            Triage Results
-          </h2>
-          <p className="mt-2 text-gray-500">
-            AI decision results will appear here.
+          <h2 className="text-xl font-semibold text-gray-800">Batch Upload</h2>
+          <p className="mb-4 text-sm text-gray-500">
+            Process multiple claims from CSV file
           </p>
+          <BatchUpload />
         </section>
 
         {/* Dashboard Section */}
         <section className="rounded-lg bg-white p-6 shadow">
-          <h2 className="text-xl font-semibold text-gray-800">Dashboard</h2>
-          <p className="mt-2 text-gray-500">
-            Claims metrics and analytics coming soon.
+          <Dashboard />
+        </section>
+        {/* Queue View Section */}
+        <section className="rounded-lg bg-white p-6 shadow">
+          <h2 className="text-xl font-semibold text-gray-800">Claims Queues</h2>
+          <p className="mb-4 text-sm text-gray-500">
+            View and manage claims by triage decision
           </p>
+          <QueueView />
         </section>
       </main>
     </div>
