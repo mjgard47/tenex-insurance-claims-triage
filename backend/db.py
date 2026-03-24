@@ -33,6 +33,8 @@ def init_db():
             damage_assessment TEXT,
             next_steps TEXT,
             escalation_reason TEXT,
+            criteria_checks TEXT,
+            payout_calculation TEXT,
             timestamp TEXT,
             claim_data TEXT,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -80,9 +82,10 @@ def _insert_response(conn, response: AIResponse, claim: ClaimInput = None):
             estimated_review_time, estimated_payout_range,
             confidence_score, processing_time_seconds,
             reasoning, fraud_signals, policy_verification,
-            damage_assessment, next_steps, escalation_reason, timestamp,
-            claim_data
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            damage_assessment, next_steps, escalation_reason,
+            criteria_checks, payout_calculation,
+            timestamp, claim_data
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             response.claim_id,
@@ -99,6 +102,8 @@ def _insert_response(conn, response: AIResponse, claim: ClaimInput = None):
             response.damage_assessment,
             json.dumps(response.next_steps),
             response.escalation_reason,
+            json.dumps([c.model_dump() for c in response.criteria_checks]),
+            json.dumps(response.payout_calculation.model_dump() if response.payout_calculation else None),
             response.timestamp.isoformat(),
             claim_data,
         ),
@@ -158,6 +163,12 @@ def _row_to_dict(row: sqlite3.Row) -> dict:
     d = dict(row)
     d["fraud_signals"] = json.loads(d["fraud_signals"])
     d["next_steps"] = json.loads(d["next_steps"])
+    if d.get("criteria_checks"):
+        d["criteria_checks"] = json.loads(d["criteria_checks"])
+    else:
+        d["criteria_checks"] = []
+    if d.get("payout_calculation"):
+        d["payout_calculation"] = json.loads(d["payout_calculation"])
     if d.get("claim_data"):
         d["claim_data"] = json.loads(d["claim_data"])
     return d

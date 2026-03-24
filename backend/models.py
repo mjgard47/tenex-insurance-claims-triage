@@ -54,6 +54,19 @@ class ClaimInput(BaseModel):
     airbags_deployed: bool
 
 
+class CriteriaCheck(BaseModel):
+    label: str
+    value: str
+    threshold: str
+    passed: bool
+
+
+class PayoutCalculation(BaseModel):
+    damage_estimate: float
+    deductible: float
+    recommended_payout: float
+
+
 class AIResponse(BaseModel):
     claim_id: str
     decision: Decision
@@ -64,6 +77,8 @@ class AIResponse(BaseModel):
     confidence_score: float
     processing_time_seconds: float
     reasoning: str
+    criteria_checks: list[CriteriaCheck] = []
+    payout_calculation: Optional[PayoutCalculation] = None
     fraud_signals: list[str]
     policy_verification: str
     damage_assessment: str

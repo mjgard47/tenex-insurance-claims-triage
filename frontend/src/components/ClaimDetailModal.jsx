@@ -154,6 +154,67 @@ function ClaimDetailModal({ claim, onClose }) {
             </div>
           </div>
 
+          {/* Decision Breakdown */}
+          {claim.criteria_checks && claim.criteria_checks.length > 0 && (
+            <div className="rounded-md border border-gray-200 p-4">
+              <h3 className="mb-3 text-sm font-semibold uppercase tracking-wide text-gray-500">
+                Decision Breakdown
+              </h3>
+              <div className="space-y-2">
+                {claim.criteria_checks.map((check, i) => (
+                  <div
+                    key={i}
+                    className={`flex items-start gap-3 rounded-md px-3 py-2 text-sm ${
+                      check.passed
+                        ? "bg-green-50 text-green-800"
+                        : "bg-red-50 text-red-800"
+                    }`}
+                  >
+                    <span className="mt-0.5 flex-shrink-0 font-bold">
+                      {check.passed ? "\u2713" : "\u2717"}
+                    </span>
+                    <div>
+                      <span className="font-medium">{check.label}:</span>{" "}
+                      <span>{check.value}</span>
+                      <p className="text-xs opacity-70">{check.threshold}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Payout Calculation */}
+              {claim.payout_calculation && (
+                <div className="mt-4 rounded-md border border-green-200 bg-green-50 p-3">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-green-700">
+                    Payout Calculation
+                  </p>
+                  <div className="mt-2 space-y-1 font-mono text-sm text-green-800">
+                    <p>
+                      Damage estimate:{" "}
+                      <span className="font-semibold">
+                        ${claim.payout_calculation.damage_estimate.toLocaleString()}
+                      </span>
+                    </p>
+                    <p>
+                      Minus deductible:{" "}
+                      <span className="font-semibold">
+                        -${claim.payout_calculation.deductible.toLocaleString()}
+                      </span>
+                    </p>
+                    <div className="border-t border-green-300 pt-1">
+                      <p>
+                        Recommended payout:{" "}
+                        <span className="text-base font-bold">
+                          ${claim.payout_calculation.recommended_payout.toLocaleString()}
+                        </span>
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
           {/* AI Reasoning */}
           <div>
             <h3 className="mb-2 text-sm font-semibold uppercase tracking-wide text-gray-500">
@@ -311,6 +372,34 @@ function ClaimDetailModal({ claim, onClose }) {
                 </button>
               ))}
             </div>
+          </div>
+
+          {/* Regulatory Compliance Disclaimer */}
+          <div className="rounded-md border border-gray-300 bg-gray-100 p-4">
+            <p className="mb-2 text-xs font-bold uppercase tracking-wide text-gray-500">
+              AI Recommendation Disclaimer
+            </p>
+            <p className="text-xs leading-relaxed text-gray-600">
+              This is an AI-generated <span className="font-semibold">RECOMMENDATION</span> based
+              on deterministic criteria evaluation. All values shown are derived
+              directly from claim input data — no generative AI or language
+              models produce this output.
+            </p>
+            <div className="mt-3 grid grid-cols-2 gap-2 text-xs text-gray-600">
+              <div>
+                <p className="font-semibold text-gray-700">Final Decision Authority</p>
+                <p>Licensed Claims Adjuster</p>
+              </div>
+              <div>
+                <p className="font-semibold text-gray-700">AI Role</p>
+                <p>Decision support only</p>
+              </div>
+            </div>
+            <p className="mt-3 text-xs leading-relaxed text-gray-500">
+              The assigned adjuster must verify all claim data, review
+              supporting documentation, apply professional judgment, and
+              approve or modify this recommendation before any action is taken.
+            </p>
           </div>
         </div>
       </div>

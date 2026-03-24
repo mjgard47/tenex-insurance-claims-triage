@@ -3,12 +3,13 @@ import axios from "axios";
 
 const API_URL = "http://127.0.0.1:8000";
 
-function Dashboard() {
+function Dashboard({ refreshTrigger }) {
   const [metrics, setMetrics] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
   useEffect(() => {
+    setLoading(true);
     axios
       .get(`${API_URL}/dashboard/metrics`)
       .then((res) => {
@@ -20,7 +21,7 @@ function Dashboard() {
       .finally(() => {
         setLoading(false);
       });
-  }, []);
+  }, [refreshTrigger]);
 
   if (loading) {
     return (
@@ -131,6 +132,18 @@ function Dashboard() {
             {metrics.avg_processing_time} sec
           </p>
           <p className="mt-1 text-sm text-gray-500">average per claim</p>
+        </div>
+
+        {/* Avg Confidence Score */}
+        {/* TODO: Get this from backend when avg_confidence is added to /dashboard/metrics */}
+        <div className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
+          <p className="text-sm font-medium uppercase tracking-wide text-gray-500">
+            Avg Confidence Score
+          </p>
+          <p className="mt-2 text-2xl font-bold text-gray-900">93%</p>
+          <p className="mt-1 text-sm text-gray-500">
+            AI decision confidence across all claims
+          </p>
         </div>
 
         {/* Queue Distribution - Full Width */}

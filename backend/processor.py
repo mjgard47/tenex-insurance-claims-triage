@@ -1,12 +1,15 @@
 import random
 from datetime import datetime
-from backend.models import ClaimInput, AIResponse, Decision
+from backend.models import ClaimInput, AIResponse, Decision, CriteriaCheck, PayoutCalculation
 
 
 def process_claim(claim: ClaimInput) -> AIResponse:
     fraud_signals = _detect_fraud_signals(claim)
     triage = _triage(claim, fraud_signals)
     next_steps = _build_next_steps(triage["decision"], claim, fraud_signals)
+
+    criteria_checks = _build_criteria_checks(claim, fraud_signals)
+    payout_calc = _build_payout_calculation(claim, triage["decision"])
 
     return AIResponse(
         claim_id=claim.claim_id,
@@ -18,6 +21,8 @@ def process_claim(claim: ClaimInput) -> AIResponse:
         confidence_score=triage["confidence_score"],
         processing_time_seconds=round(random.uniform(0.5, 2.0), 2),
         reasoning=triage["reasoning"],
+        criteria_checks=criteria_checks,
+        payout_calculation=payout_calc,
         fraud_signals=fraud_signals,
         policy_verification=_verify_policy(claim),
         damage_assessment=_assess_damage(claim),
@@ -183,3 +188,55 @@ def _build_next_steps(decision: Decision, claim: ClaimInput, fraud_signals: list
         "Review police report and witness statements if available",
         "Contact policyholder within 2 business days with status update",
     ]
+
+
+def _build_criteria_checks(claim: ClaimInput, fraud_signals: list[str]) -> list[CriteriaCheck]:
+    fault_label = claim.fault_determination.value.replace("_", " ")
+    return [
+        CriteriaCheck(
+            label="Damage amount",
+            value=f"${claim.damage_amount_estimate:,.2f}",
+            threshold="< $5,000 for fast-track",
+            passed=claim.damage_amount_estimate < 5000,
+        ),
+        CriteriaCheck(
+            label="Fault determination",
+            value=fault_label,
+            threshold="Other party or shared for fast-track",
+            passed=claim.fault_determination in ["other_party", "shared"],
+        ),
+        CriteriaCheck(
+            label="Police report filed",
+            value="Yes" if claim.police_report_filed else "No",
+            threshold="Required for fast-track",
+            passed=claim.police_report_filed,
+        ),
+        CriteriaCheck(
+            label="Prior claims",
+            value=str(claim.prior_claims_count),
+            threshold="<= 1 for fast-track",
+            passed=claim.prior_claims_count <= 1,
+        ),
+        CriteriaCheck(
+            label="Fraud signals",
+            value=f"{len(fraud_signals)} detected" if fraud_signals else "None",
+            threshold="0 for fast-track",
+            passed=len(fraud_signals) == 0,
+        ),
+        CriteriaCheck(
+            label="Within coverage limit",
+            value=f"${claim.damage_amount_estimate:,.2f} / ${claim.policy_coverage_limit:,.2f}",
+            threshold="Damage <= coverage limit",
+            passed=claim.damage_amount_estimate <= claim.policy_coverage_limit,
+        ),
+    ]
+
+
+def _build_payout_calculation(claim: ClaimInput, decision: Decision) -> PayoutCalculation | None:
+    if decision != Decision.FAST_TRACK:
+        return None
+    return PayoutCalculation(
+        damage_estimate=claim.damage_amount_estimate,
+        deductible=claim.deductible,
+        recommended_payout=round(max(claim.damage_amount_estimate - claim.deductible, 0), 2),
+    )
