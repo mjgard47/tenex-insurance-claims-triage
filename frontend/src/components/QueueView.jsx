@@ -24,17 +24,29 @@ const QUEUES = [
   },
   {
     key: "escalation",
-    label: "Escalation Queue",
+    label: "Senior Review Queue",
     adjuster: "Senior Claims Adjusters / SIU",
     activeClass: "bg-red-100 text-red-800 border-red-300",
     emptyMsg:
-      "No escalation claims yet. High-risk or high-dollar claims will appear here.",
+      "No senior review claims yet. High-risk or high-dollar claims will appear here.",
   },
 ];
+
+const PROFILE_QUEUES = {
+  Admin: ["fast_track", "standard_review", "escalation"],
+  "Junior Adjuster 1": ["fast_track"],
+  "Junior Adjuster 2": ["fast_track"],
+  "Standard Adjuster 1": ["standard_review"],
+  "Standard Adjuster 2": ["standard_review"],
+  "Senior Adjuster 1": ["escalation"],
+  "Senior Adjuster 2": ["escalation"],
+};
 
 function downloadCSV(claims, queueLabel) {
   const headers = [
     "claim_id",
+    "assigned_to",
+    "status",
     "queue",
     "decision",
     "recommended_adjuster",
@@ -50,6 +62,8 @@ function downloadCSV(claims, queueLabel) {
   const rows = claims.map((c) =>
     [
       c.claim_id,
+      c.assigned_to || "",
+      c.status || "Assigned",
       c.queue,
       c.decision,
       c.recommended_adjuster,
@@ -78,17 +92,35 @@ function downloadCSV(claims, queueLabel) {
   URL.revokeObjectURL(url);
 }
 
-function QueueView() {
+function QueueView({ currentProfile, showOnlyMyClaims, setShowOnlyMyClaims, onClaimUpdated }) {
+  const allowedQueues = PROFILE_QUEUES[currentProfile] || [];
+  const isAdmin = currentProfile === "Admin";
+
   const [selectedQueue, setSelectedQueue] = useState("fast_track");
-  const [claims, setClaims] = useState([]);
+  const [allClaims, setAllClaims] = useState([]);
   const [counts, setCounts] = useState({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [selectedClaim, setSelectedClaim] = useState(null);
   const [sortNewestFirst, setSortNewestFirst] = useState(true);
   const [page, setPage] = useState(0);
+  const [refreshTrigger, setRefreshTrigger] = useState(0);
+  const [statusFilter, setStatusFilter] = useState("pending");
 
-  // Fetch counts for all queues on mount
+  function handleClaimUpdated() {
+    setRefreshTrigger((prev) => prev + 1);
+    if (onClaimUpdated) onClaimUpdated();
+  }
+
+  // When profile changes, switch to an allowed queue
+  useEffect(() => {
+    setSelectedClaim(null);
+    if (!isAdmin && !allowedQueues.includes(selectedQueue) && selectedQueue !== "all") {
+      setSelectedQueue(allowedQueues[0] || "fast_track");
+    }
+  }, [currentProfile]);
+
+  // Fetch counts for all queues
   useEffect(() => {
     Promise.all(
       QUEUES.map((q) =>
@@ -106,7 +138,7 @@ function QueueView() {
         setCounts(map);
       })
       .catch(() => {});
-  }, []);
+  }, [refreshTrigger]);
 
   // Fetch claims when queue changes
   useEffect(() => {
@@ -120,8 +152,7 @@ function QueueView() {
         QUEUES.map((q) => axios.get(`${API_URL}/queue/${q.key}`))
       )
         .then((responses) => {
-          const all = responses.flatMap((r) => r.data);
-          setClaims(all);
+          setAllClaims(responses.flatMap((r) => r.data));
         })
         .catch((err) => {
           setError(err.response?.data?.detail || "Failed to load claims");
@@ -133,7 +164,7 @@ function QueueView() {
       axios
         .get(`${API_URL}/queue/${selectedQueue}`)
         .then((res) => {
-          setClaims(res.data);
+          setAllClaims(res.data);
           setCounts((prev) => ({ ...prev, [selectedQueue]: res.data.length }));
         })
         .catch((err) => {
@@ -143,21 +174,54 @@ function QueueView() {
           setLoading(false);
         });
     }
-  }, [selectedQueue]);
+  }, [selectedQueue, refreshTrigger]);
+
+  // Apply profile filtering
+  const profileFiltered =
+    !isAdmin && showOnlyMyClaims
+      ? allClaims.filter((c) => c.assigned_to === currentProfile)
+      : allClaims;
+
+  // Apply status filtering
+  const filteredClaims =
+    statusFilter === "all"
+      ? profileFiltered
+      : statusFilter === "pending"
+        ? profileFiltered.filter((c) => c.status !== "Approved" && c.status !== "Denied")
+        : statusFilter === "finished"
+          ? profileFiltered.filter((c) => c.status === "Approved" || c.status === "Denied")
+          : profileFiltered.filter((c) => c.status === statusFilter);
 
   const queueConfig = QUEUES.find((q) => q.key === selectedQueue);
-  const totalCount = (counts["fast_track"] || 0) + (counts["standard_review"] || 0) + (counts["escalation"] || 0);
+  const totalCount =
+    (counts["fast_track"] || 0) +
+    (counts["standard_review"] || 0) +
+    (counts["escalation"] || 0);
 
-  const sortedClaims = [...claims].sort((a, b) => {
+  const isSeniorQueue =
+    selectedQueue === "escalation" || currentProfile.includes("Senior");
+
+  const sortedClaims = [...filteredClaims].sort((a, b) => {
+    // Fraud-first sort for Senior queue
+    if (isSeniorQueue) {
+      const aFraud = (a.fraud_signals || []).length;
+      const bFraud = (b.fraud_signals || []).length;
+      if (aFraud !== bFraud) return bFraud - aFraud;
+    }
     const diff = new Date(b.timestamp) - new Date(a.timestamp);
     return sortNewestFirst ? diff : -diff;
   });
 
-  const totalPages = Math.ceil(sortedClaims.length / PAGE_SIZE);
-  const pagedClaims = sortedClaims.slice(
-    page * PAGE_SIZE,
-    (page + 1) * PAGE_SIZE
-  );
+  const fraudClaimsCount = filteredClaims.filter(
+    (c) => c.fraud_signals && c.fraud_signals.length > 0
+  ).length;
+
+  const displayClaims = sortedClaims;
+
+  function canAccessQueue(queueKey) {
+    if (isAdmin) return true;
+    return allowedQueues.includes(queueKey);
+  }
 
   function formatTimestamp(iso) {
     const date = new Date(iso);
@@ -170,51 +234,184 @@ function QueueView() {
     });
   }
 
+  const queuePageTitle = isAdmin
+    ? "All Claims"
+    : currentProfile.includes("Junior")
+      ? "Your Fast-Track Queue"
+      : currentProfile.includes("Standard")
+        ? "Your Standard Review Queue"
+        : "Your Senior Review Queue";
+
+  // Status counts for adjuster view
+  const myClaims = allClaims.filter((c) => c.assigned_to === currentProfile);
+  const myAssigned = myClaims.filter((c) => c.status === "Assigned").length;
+  const myInReview = myClaims.filter((c) => c.status === "In Review").length;
+  const myEscalated = myClaims.filter((c) => c.status === "Escalated").length;
+  const myFinished = myClaims.filter(
+    (c) => c.status === "Approved" || c.status === "Denied"
+  ).length;
+
   return (
     <div>
-      {/* Queue Tabs */}
-      <div className="mb-6 flex flex-wrap gap-2">
-        <button
-          type="button"
-          onClick={() => setSelectedQueue("all")}
-          className={`rounded-md border px-4 py-2 text-sm font-medium ${
-            selectedQueue === "all"
-              ? "bg-blue-100 text-blue-800 border-blue-300"
-              : "border-gray-300 bg-white text-gray-700 hover:bg-gray-50"
-          }`}
+      {/* Adjuster View */}
+      {!isAdmin && (
+        <>
+          {/* Status Count Cards */}
+          <div className="mb-4 grid grid-cols-4 gap-3">
+            <button
+              type="button"
+              onClick={() => { setStatusFilter("Assigned"); setShowOnlyMyClaims(true); }}
+              className={`rounded-lg p-3 text-center transition-all ${statusFilter === "Assigned" ? "ring-2 ring-offset-1" : ""}`}
+              style={{
+                backgroundColor: "#EFF6FF",
+                borderLeft: "3px solid #1E3A5F",
+                ...(statusFilter === "Assigned" ? { ringColor: "#1E3A5F" } : {}),
+              }}
+            >
+              <p className="text-2xl font-bold" style={{ color: "#1E3A5F" }}>{myAssigned}</p>
+              <p className="text-xs font-medium text-gray-600">Assigned</p>
+            </button>
+            <button
+              type="button"
+              onClick={() => { setStatusFilter("In Review"); setShowOnlyMyClaims(true); }}
+              className={`rounded-lg border border-blue-200 bg-blue-50 p-3 text-center transition-all ${statusFilter === "In Review" ? "ring-2 ring-blue-500 ring-offset-1" : ""}`}
+            >
+              <p className="text-2xl font-bold text-blue-900">{myInReview}</p>
+              <p className="text-xs font-medium text-gray-600">In Review</p>
+            </button>
+            <button
+              type="button"
+              onClick={() => { setStatusFilter("Escalated"); setShowOnlyMyClaims(true); }}
+              className={`rounded-lg border border-purple-200 bg-purple-50 p-3 text-center transition-all ${statusFilter === "Escalated" ? "ring-2 ring-purple-500 ring-offset-1" : ""}`}
+            >
+              <p className="text-2xl font-bold text-purple-900">{myEscalated}</p>
+              <p className="text-xs font-medium text-gray-600">Escalated</p>
+            </button>
+            <button
+              type="button"
+              onClick={() => { setStatusFilter("finished"); setShowOnlyMyClaims(true); }}
+              className={`rounded-lg border border-green-200 bg-green-50 p-3 text-center transition-all ${statusFilter === "finished" ? "ring-2 ring-green-500 ring-offset-1" : ""}`}
+            >
+              <p className="text-2xl font-bold text-green-900">{myFinished}</p>
+              <p className="text-xs font-medium text-gray-600">Finished</p>
+            </button>
+          </div>
+        </>
+      )}
+
+      {/* Fraud Alert Banner (Senior queue) */}
+      {isSeniorQueue && fraudClaimsCount > 0 && (
+        <div
+          className="mb-4 flex items-start gap-3 rounded-lg border border-red-200 p-4"
+          style={{
+            backgroundColor: "#FEF2F2",
+            borderLeftWidth: "4px",
+            borderLeftColor: "#DC2626",
+          }}
         >
-          All ({totalCount || "..."})
-        </button>
-        {QUEUES.map((q) => (
+          <span className="text-xl">&#9888;</span>
+          <div>
+            <p className="font-semibold text-red-900">
+              {fraudClaimsCount}{" "}
+              {fraudClaimsCount === 1 ? "claim has" : "claims have"} active
+              fraud signals
+            </p>
+            <p className="mt-1 text-sm text-red-700">
+              Fraud-flagged claims appear at the top of the queue
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* Admin Controls */}
+      {isAdmin && (
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+          <p className="text-sm italic text-gray-500">
+            Admin view — showing all claims across all queues
+          </p>
+        </div>
+      )}
+
+      {/* Queue Tabs — Admin only sees these */}
+      {isAdmin && (
+        <div className="mb-6 flex flex-wrap gap-2">
           <button
-            key={q.key}
             type="button"
-            onClick={() => setSelectedQueue(q.key)}
+            onClick={() => setSelectedQueue("all")}
             className={`rounded-md border px-4 py-2 text-sm font-medium ${
-              selectedQueue === q.key
-                ? q.activeClass
+              selectedQueue === "all"
+                ? "border-blue-300 bg-blue-100 text-blue-800"
                 : "border-gray-300 bg-white text-gray-700 hover:bg-gray-50"
             }`}
           >
-            {q.label.replace(" Queue", "")} ({counts[q.key] ?? "..."})
+            All ({totalCount || "..."})
           </button>
-        ))}
-      </div>
+          {QUEUES.map((q) => (
+            <button
+              key={q.key}
+              type="button"
+              onClick={() => setSelectedQueue(q.key)}
+              className={`rounded-md border px-4 py-2 text-sm font-medium ${
+                selectedQueue === q.key
+                  ? q.activeClass
+                  : "border-gray-300 bg-white text-gray-700 hover:bg-gray-50"
+              }`}
+            >
+              {q.label.replace(" Queue", "")} ({counts[q.key] ?? "..."})
+            </button>
+          ))}
+        </div>
+      )}
 
       {/* Queue Header */}
       <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
         <div>
-          <h3 className="text-lg font-semibold text-gray-800">
-            {selectedQueue === "all" ? "All Claims" : queueConfig.label}
-          </h3>
+          {isAdmin && (
+            <h3 className="text-lg font-semibold text-gray-800">
+              {selectedQueue === "all" ? "All Claims" : queueConfig?.label}
+            </h3>
+          )}
           <p className="text-sm text-gray-500">
-            Showing {pagedClaims.length} of {claims.length} claims
-            {selectedQueue !== "all" && queueConfig
-              ? ` — Assigned to: ${queueConfig.adjuster}`
-              : ""}
+            {showOnlyMyClaims && !isAdmin
+              ? `Showing ${sortedClaims.length} of your assigned claims`
+              : `Showing ${displayClaims.length} of ${sortedClaims.length} claims`}
           </p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          {!isAdmin && (
+            <label
+              key={`filter-${currentProfile}`}
+              className="flex cursor-pointer items-center gap-1.5 text-xs text-gray-600"
+            >
+              <input
+                type="checkbox"
+                checked={showOnlyMyClaims}
+                onChange={(e) => setShowOnlyMyClaims(e.target.checked)}
+                className="h-3.5 w-3.5 rounded border-gray-300"
+              />
+              My claims
+            </label>
+          )}
+          <div className="flex rounded-md border border-gray-300">
+            {[
+              { key: "pending", label: "Pending" },
+              { key: "finished", label: "Finished" },
+              { key: "all", label: "All" },
+            ].map((f) => (
+              <button
+                key={f.key}
+                type="button"
+                onClick={() => { setStatusFilter(f.key); setPage(0); }}
+                className={`px-3 py-1 text-xs font-medium ${
+                  statusFilter === f.key
+                    ? "bg-blue-600 text-white"
+                    : "bg-white text-gray-600 hover:bg-gray-50"
+                } ${f.key === "pending" ? "rounded-l-md" : ""} ${f.key === "all" ? "rounded-r-md" : ""}`}
+              >
+                {f.label}
+              </button>
+            ))}
+          </div>
           <button
             type="button"
             onClick={() => setSortNewestFirst(!sortNewestFirst)}
@@ -222,7 +419,7 @@ function QueueView() {
           >
             Sort by: {sortNewestFirst ? "Newest First" : "Oldest First"}
           </button>
-          {claims.length > 0 && (
+          {sortedClaims.length > 0 && (
             <button
               type="button"
               onClick={() =>
@@ -234,7 +431,7 @@ function QueueView() {
               className="flex items-center gap-1 rounded-md border border-gray-300 bg-white px-3 py-1 text-xs font-medium text-gray-600 hover:bg-gray-50"
             >
               <span>&#8595;</span>
-              Export All ({claims.length})
+              Export All ({sortedClaims.length})
             </button>
           )}
         </div>
@@ -275,25 +472,37 @@ function QueueView() {
       )}
 
       {/* Empty State */}
-      {!loading && !error && claims.length === 0 && (
+      {!loading && !error && sortedClaims.length === 0 && (
         <div className="py-12 text-center">
           <p className="text-sm text-gray-500">
-            {selectedQueue === "all"
-              ? "No claims processed yet."
-              : queueConfig.emptyMsg}
+            {showOnlyMyClaims && !isAdmin
+              ? `No claims assigned to ${currentProfile} in this queue`
+              : selectedQueue === "all"
+                ? "No claims processed yet."
+                : queueConfig.emptyMsg}
           </p>
+          {showOnlyMyClaims && !isAdmin && (
+            <button
+              type="button"
+              onClick={() => setShowOnlyMyClaims(false)}
+              className="mt-2 text-sm font-medium text-blue-600 hover:text-blue-800"
+            >
+              Show all claims in this queue
+            </button>
+          )}
         </div>
       )}
 
       {/* Claims Table */}
-      {!loading && !error && claims.length > 0 && (
+      {!loading && !error && sortedClaims.length > 0 && (
         <>
-          <div className="overflow-x-auto rounded-md border border-gray-200">
+          <div className="overflow-auto rounded-md border border-gray-200" style={{ maxHeight: "500px" }}>
             <table className="min-w-full text-sm">
               <thead>
                 <tr className="bg-gray-100 text-left text-xs font-semibold uppercase tracking-wide text-gray-600">
                   <th className="px-4 py-3">Claim ID</th>
-                  <th className="px-4 py-3">Queue</th>
+                  <th className="px-4 py-3">Status</th>
+                  <th className="px-4 py-3">Assigned To</th>
                   <th className="px-4 py-3">Estimated Payout</th>
                   <th className="px-4 py-3">Confidence</th>
                   <th className="px-4 py-3">Timestamp</th>
@@ -301,18 +510,63 @@ function QueueView() {
                 </tr>
               </thead>
               <tbody>
-                {pagedClaims.map((claim, i) => (
+                {displayClaims.map((claim, i) => {
+                  const hasFraud =
+                    claim.fraud_signals && claim.fraud_signals.length > 0;
+                  return (
                   <tr
                     key={claim.claim_id}
                     onClick={() => setSelectedClaim(claim)}
                     className={`cursor-pointer border-t border-gray-100 hover:bg-blue-50 ${
                       i % 2 === 0 ? "bg-white" : "bg-gray-50"
                     }`}
+                    style={
+                      hasFraud
+                        ? {
+                            backgroundColor: "#FFFBEB",
+                            borderLeftWidth: "4px",
+                            borderLeftColor: "#DC2626",
+                            borderLeftStyle: "solid",
+                          }
+                        : {}
+                    }
                   >
-                    <td className="px-4 py-3 font-medium text-gray-900">
-                      {claim.claim_id}
+                    <td className="px-4 py-3">
+                      <span
+                        className="font-mono font-medium"
+                        style={{ color: "#1E3A5F" }}
+                      >
+                        {claim.claim_id}
+                      </span>
                     </td>
-                    <td className="px-4 py-3 text-gray-600">{claim.queue}</td>
+                    <td className="px-4 py-3">
+                      <span
+                        className={`inline-block rounded-full px-2.5 py-0.5 text-xs font-medium ${
+                          claim.status === "Approved"
+                            ? "bg-green-100 text-green-800"
+                            : claim.status === "Denied"
+                              ? "bg-red-100 text-red-800"
+                              : claim.status === "Escalated"
+                                ? "bg-purple-100 text-purple-800"
+                                : claim.status === "In Review"
+                                  ? "bg-blue-100 text-blue-800"
+                                  : "bg-gray-100 text-gray-800"
+                        }`}
+                      >
+                        {claim.status || "Assigned"}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3">
+                      {claim.assigned_to ? (
+                        <span className="inline-block rounded-full bg-green-100 px-2.5 py-0.5 text-xs font-medium text-green-800">
+                          {claim.assigned_to}
+                        </span>
+                      ) : (
+                        <span className="text-xs italic text-gray-400">
+                          Unassigned
+                        </span>
+                      )}
+                    </td>
                     <td className="px-4 py-3 text-gray-600">
                       {claim.estimated_payout_range || "N/A"}
                     </td>
@@ -324,48 +578,59 @@ function QueueView() {
                     </td>
                     <td className="px-4 py-3">
                       {claim.fraud_signals.length > 0 ? (
-                        <span className="inline-block rounded-full bg-red-100 px-2 py-0.5 text-xs font-semibold text-red-800">
-                          {claim.fraud_signals.length}
+                        <span
+                          className="inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-xs font-bold"
+                          style={{
+                            backgroundColor: "#FEE2E2",
+                            color: "#B91C1C",
+                            borderColor: "#DC2626",
+                          }}
+                        >
+                          &#9888; FRAUD &middot; {claim.fraud_signals.length}
                         </span>
                       ) : (
                         <span className="text-gray-400">&mdash;</span>
                       )}
                     </td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           </div>
 
-          {/* Pagination */}
-          {totalPages > 1 && (
-            <div className="mt-3 flex items-center justify-between">
-              <p className="text-xs text-gray-500">
-                Page {page + 1} of {totalPages}
-              </p>
-              <div className="flex gap-2">
-                <button
-                  type="button"
-                  onClick={() => setPage((p) => Math.max(0, p - 1))}
-                  disabled={page === 0}
-                  className="rounded-md border border-gray-300 bg-white px-3 py-1 text-xs font-medium text-gray-600 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40"
-                >
-                  Previous
-                </button>
-                <button
-                  type="button"
-                  onClick={() =>
-                    setPage((p) => Math.min(totalPages - 1, p + 1))
-                  }
-                  disabled={page >= totalPages - 1}
-                  className="rounded-md border border-gray-300 bg-white px-3 py-1 text-xs font-medium text-gray-600 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40"
-                >
-                  Next
-                </button>
-              </div>
-            </div>
-          )}
         </>
+      )}
+
+      {/* Personal Stats (adjuster only, below table) */}
+      {!isAdmin && myClaims.length > 0 && (
+        <div className="mt-6 rounded-lg border border-gray-200 bg-gray-50 p-4">
+          <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-gray-400">
+            Your Stats
+          </p>
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            <div className="rounded-md bg-white p-3 text-center shadow-sm">
+              <p className="text-lg font-bold text-gray-900">{myClaims.length}</p>
+              <p className="text-xs text-gray-500">Total Assigned</p>
+            </div>
+            <div className="rounded-md bg-white p-3 text-center shadow-sm">
+              <p className="text-lg font-bold text-green-700">
+                {myClaims.filter((c) => c.status === "Approved").length}
+              </p>
+              <p className="text-xs text-gray-500">Approved</p>
+            </div>
+            <div className="rounded-md bg-white p-3 text-center shadow-sm">
+              <p className="text-lg font-bold text-red-700">
+                {myClaims.filter((c) => c.status === "Denied").length}
+              </p>
+              <p className="text-xs text-gray-500">Denied</p>
+            </div>
+            <div className="rounded-md bg-white p-3 text-center shadow-sm">
+              <p className="text-lg font-bold text-purple-700">{myEscalated}</p>
+              <p className="text-xs text-gray-500">Escalated</p>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Claim Detail Modal */}
@@ -373,6 +638,7 @@ function QueueView() {
         <ClaimDetailModal
           claim={selectedClaim}
           onClose={() => setSelectedClaim(null)}
+          onClaimUpdated={handleClaimUpdated}
         />
       )}
     </div>

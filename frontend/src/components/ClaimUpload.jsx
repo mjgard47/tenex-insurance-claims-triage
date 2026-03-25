@@ -85,31 +85,33 @@ function validateForm(form) {
   return errors;
 }
 
+const INITIAL_FORM = {
+  claim_id: "",
+  submission_date: "",
+  policy_number: "",
+  policyholder_name: "",
+  vehicle_year: "",
+  vehicle_make: "",
+  vehicle_model: "",
+  vehicle_vin: "",
+  vehicle_mileage: "",
+  date_of_incident: "",
+  time_of_incident: "",
+  location_address: "",
+  collision_type: "rear_end",
+  damage_description: "",
+  damage_amount_estimate: "",
+  fault_determination: "other_party",
+  police_report_filed: false,
+  policy_coverage_limit: "",
+  deductible: "",
+  prior_claims_count: "0",
+  vehicle_drivable: true,
+  airbags_deployed: false,
+};
+
 function ClaimUpload({ onClaimProcessed }) {
-  const [form, setForm] = useState({
-    claim_id: "",
-    submission_date: "",
-    policy_number: "",
-    policyholder_name: "",
-    vehicle_year: "",
-    vehicle_make: "",
-    vehicle_model: "",
-    vehicle_vin: "",
-    vehicle_mileage: "",
-    date_of_incident: "",
-    time_of_incident: "",
-    location_address: "",
-    collision_type: "rear_end",
-    damage_description: "",
-    damage_amount_estimate: "",
-    fault_determination: "other_party",
-    police_report_filed: false,
-    policy_coverage_limit: "",
-    deductible: "",
-    prior_claims_count: "0",
-    vehicle_drivable: true,
-    airbags_deployed: false,
-  });
+  const [form, setForm] = useState({ ...INITIAL_FORM });
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState(null);
   const [error, setError] = useState(null);
@@ -437,11 +439,12 @@ function ClaimUpload({ onClaimProcessed }) {
             </div>
           </div>
 
-          {/* Decision Breakdown */}
+          {/* AI Triage Criteria */}
           {result.criteria_checks && result.criteria_checks.length > 0 && (
             <div className="rounded-md border border-gray-200 p-4">
               <h4 className="mb-3 text-sm font-semibold text-gray-700">
-                Decision Breakdown
+                AI Triage Criteria —{" "}
+                {DECISION_LABELS[result.decision] || "Standard Review"}
               </h4>
               <div className="space-y-2">
                 {result.criteria_checks.map((check, i) => (
@@ -530,6 +533,20 @@ function ClaimUpload({ onClaimProcessed }) {
               ))}
             </ul>
           </div>
+
+          {/* Submit Another Claim */}
+          <button
+            type="button"
+            onClick={() => {
+              setResult(null);
+              setForm({ ...INITIAL_FORM });
+              setValidationErrors([]);
+              window.scrollTo({ top: 0, behavior: "smooth" });
+            }}
+            className="w-full rounded-md bg-blue-600 px-4 py-3 text-sm font-medium text-white shadow-sm hover:bg-blue-700 sm:w-auto"
+          >
+            Submit Another Claim
+          </button>
         </div>
       )}
     </div>

@@ -296,7 +296,7 @@ function BatchUpload() {
                 Standard Review: {results.summary.standard_review}
               </span>
               <span className="inline-block rounded-full bg-red-100 px-4 py-2 text-sm font-semibold text-red-800">
-                Escalation: {results.summary.escalation}
+                Senior: {results.summary.escalation}
               </span>
             </div>
           </div>

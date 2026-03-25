@@ -59,7 +59,7 @@ def _triage(claim: ClaimInput, fraud_signals: list[str]) -> dict:
         has_fraud = len(fraud_signals) > 0
         return {
             "decision": Decision.ESCALATION,
-            "queue": "Escalation Queue",
+            "queue": "Senior Review Queue",
             "recommended_adjuster": "SIU (Special Investigations)" if has_fraud else "Senior Claims Adjuster",
             "estimated_review_time": "5-10 business days" if has_fraud else "3-10 business days",
             "estimated_payout_range": (

@@ -1,4 +1,15 @@
 import { useEffect, useState } from "react";
+import axios from "axios";
+
+const API_URL = "http://127.0.0.1:8000";
+
+const STATUS_COLORS = {
+  Assigned: "bg-gray-100 text-gray-800",
+  "In Review": "bg-blue-100 text-blue-800",
+  Approved: "bg-green-100 text-green-800",
+  Denied: "bg-red-100 text-red-800",
+  Escalated: "bg-purple-100 text-purple-800",
+};
 
 const DECISION_COLORS = {
   fast_track: "bg-green-100 text-green-800",
@@ -42,7 +53,28 @@ const ROLE_ACTIONS = {
   },
 };
 
-function ClaimDetailModal({ claim, onClose }) {
+const ESCALATION_MAP = {
+  "Fast-Track Queue": "Standard Review Queue",
+  "Standard Review Queue": "Senior Review Queue",
+  "Senior Review Queue": null,
+};
+
+function ClaimDetailModal({ claim, onClose, onClaimUpdated }) {
+  const [updating, setUpdating] = useState(false);
+  const [showEscalationModal, setShowEscalationModal] = useState(false);
+  const [escalationNotes, setEscalationNotes] = useState("");
+  const [showOriginal, setShowOriginal] = useState(false);
+  const [localStatus, setLocalStatus] = useState(claim.status || "Assigned");
+  const [showDenialModal, setShowDenialModal] = useState(false);
+  const [showCriteria, setShowCriteria] = useState(false);
+  const [denialCode, setDenialCode] = useState("Coverage Exclusion");
+  const [denialNotes, setDenialNotes] = useState("");
+
+  const isEscalated = !!claim.escalated_from;
+
+  const targetQueue = ESCALATION_MAP[claim.queue] || null;
+  const canEscalate = targetQueue !== null;
+
   useEffect(() => {
     function handleKeyDown(e) {
       if (e.key === "Escape") onClose();
@@ -55,10 +87,66 @@ function ClaimDetailModal({ claim, onClose }) {
     if (e.target === e.currentTarget) onClose();
   }
 
-  function handleAction(action) {
-    alert(
-      `In production, this would ${action}. Feature not implemented in prototype.`
-    );
+  async function handleStatusUpdate(newStatus) {
+    setUpdating(true);
+    try {
+      await axios.put(
+        `${API_URL}/claims/${claim.claim_id}/status?status=${encodeURIComponent(newStatus)}`
+      );
+      if (newStatus === "In Review") {
+        setLocalStatus("In Review");
+      } else {
+        if (onClaimUpdated) onClaimUpdated();
+        onClose();
+      }
+    } catch (err) {
+      alert("Failed to update status: " + (err.response?.data?.detail || err.message));
+    } finally {
+      setUpdating(false);
+    }
+  }
+
+  async function handleDeny() {
+    if (!denialNotes.trim()) return;
+    setUpdating(true);
+    try {
+      await axios.put(
+        `${API_URL}/claims/${claim.claim_id}/deny?` +
+          `denial_code=${encodeURIComponent(denialCode)}` +
+          `&denial_notes=${encodeURIComponent(denialNotes)}` +
+          `&denied_by=${encodeURIComponent(claim.assigned_to || "Unknown")}`
+      );
+      setShowDenialModal(false);
+      setDenialCode("Coverage Exclusion");
+      setDenialNotes("");
+      if (onClaimUpdated) onClaimUpdated();
+      onClose();
+    } catch (err) {
+      alert("Failed to deny: " + (err.response?.data?.detail || err.message));
+    } finally {
+      setUpdating(false);
+    }
+  }
+
+  async function handleEscalate() {
+    if (!escalationNotes.trim()) return;
+    setUpdating(true);
+    try {
+      await axios.put(
+        `${API_URL}/claims/${claim.claim_id}/escalate?` +
+          `escalated_from=${encodeURIComponent(claim.assigned_to || "Unknown")}` +
+          `&escalated_to_queue=${encodeURIComponent(targetQueue)}` +
+          `&escalation_notes=${encodeURIComponent(escalationNotes)}`
+      );
+      setShowEscalationModal(false);
+      setEscalationNotes("");
+      if (onClaimUpdated) onClaimUpdated();
+      onClose();
+    } catch (err) {
+      alert("Failed to escalate: " + (err.response?.data?.detail || err.message));
+    } finally {
+      setUpdating(false);
+    }
   }
 
   function formatTimestamp(iso) {
@@ -106,7 +194,10 @@ function ClaimDetailModal({ claim, onClose }) {
         <div className="space-y-6 p-6">
           {/* A) Header */}
           <div>
-            <h2 className="text-2xl font-bold text-gray-900">
+            <h2
+              className="font-mono text-2xl font-bold"
+              style={{ color: "#1E3A5F" }}
+            >
               {claim.claim_id}
             </h2>
             <div className="mt-2 flex flex-wrap items-center gap-3">
@@ -115,101 +206,247 @@ function ClaimDetailModal({ claim, onClose }) {
               >
                 {DECISION_LABELS[claim.decision]}
               </span>
+              <span
+                className={`inline-block rounded-full px-3 py-1 text-sm font-semibold ${STATUS_COLORS[localStatus] || STATUS_COLORS.Assigned}`}
+              >
+                {localStatus}
+              </span>
+              {claim.assigned_to && (
+                <span className="text-sm text-gray-500">
+                  Assigned to: {claim.assigned_to}
+                </span>
+              )}
               <span className="text-sm text-gray-500">
                 Submitted on {formatTimestamp(claim.timestamp)}
               </span>
             </div>
           </div>
 
-          {/* AI Triage Decision */}
-          <div className="rounded-md border border-gray-200 p-4">
-            <h3 className="mb-3 text-sm font-semibold uppercase tracking-wide text-gray-500">
-              AI Triage Decision
-            </h3>
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <p className="text-xs text-gray-500">Queue Assignment</p>
-                <p className="text-sm font-medium text-gray-900">
-                  {claim.queue}
+          {/* Escalation Info */}
+          {claim.escalated_from && (
+            <div className="rounded-md border-2 border-purple-300 bg-purple-50 p-4">
+              <h3 className="text-sm font-semibold text-purple-900">
+                Escalated from: {claim.escalated_from}
+              </h3>
+              {claim.escalation_timestamp && (
+                <p className="mt-1 text-xs text-purple-600">
+                  {formatTimestamp(claim.escalation_timestamp)}
                 </p>
-              </div>
-              <div>
-                <p className="text-xs text-gray-500">Recommended Adjuster</p>
-                <p className="text-sm font-medium text-gray-900">
-                  {claim.recommended_adjuster}
-                </p>
-              </div>
-              <div>
-                <p className="text-xs text-gray-500">Estimated Review Time</p>
-                <p className="text-sm font-medium text-gray-900">
-                  {claim.estimated_review_time}
-                </p>
-              </div>
-              <div>
-                <p className="text-xs text-gray-500">Confidence Score</p>
-                <p className="text-sm font-medium text-gray-900">
-                  {(claim.confidence_score * 100).toFixed(0)}%
-                </p>
+              )}
+              {claim.escalation_notes && (
+                <div className="mt-2 rounded-md border border-purple-200 bg-white p-3">
+                  <p className="text-xs font-medium text-gray-500">
+                    Escalation reason:
+                  </p>
+                  <p className="mt-1 text-sm text-gray-800">
+                    {claim.escalation_notes}
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Current Assignment (shown when escalated) */}
+          {isEscalated && (
+            <div className="rounded-md border border-purple-200 bg-purple-50 p-4">
+              <h3 className="mb-3 text-sm font-semibold uppercase tracking-wide text-purple-700">
+                Current Assignment
+              </h3>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <p className="text-xs text-purple-500">Current Queue</p>
+                  <p className="text-sm font-medium text-gray-900">
+                    {claim.queue}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-xs text-purple-500">Assigned To</p>
+                  <p className="text-sm font-medium text-gray-900">
+                    {claim.assigned_to || "Unassigned"}
+                  </p>
+                </div>
               </div>
             </div>
-          </div>
+          )}
 
-          {/* Decision Breakdown */}
-          {claim.criteria_checks && claim.criteria_checks.length > 0 && (
-            <div className="rounded-md border border-gray-200 p-4">
-              <h3 className="mb-3 text-sm font-semibold uppercase tracking-wide text-gray-500">
-                Decision Breakdown
+          {/* Denial Info */}
+          {claim.denial_code && (
+            <div className="rounded-md border-2 border-red-300 bg-red-50 p-4">
+              <h3 className="text-sm font-semibold text-red-900">
+                Claim Denied: {claim.denial_code}
               </h3>
-              <div className="space-y-2">
-                {claim.criteria_checks.map((check, i) => (
-                  <div
-                    key={i}
-                    className={`flex items-start gap-3 rounded-md px-3 py-2 text-sm ${
-                      check.passed
-                        ? "bg-green-50 text-green-800"
-                        : "bg-red-50 text-red-800"
-                    }`}
-                  >
-                    <span className="mt-0.5 flex-shrink-0 font-bold">
-                      {check.passed ? "\u2713" : "\u2717"}
-                    </span>
-                    <div>
-                      <span className="font-medium">{check.label}:</span>{" "}
-                      <span>{check.value}</span>
-                      <p className="text-xs opacity-70">{check.threshold}</p>
-                    </div>
-                  </div>
-                ))}
-              </div>
-
-              {/* Payout Calculation */}
-              {claim.payout_calculation && (
-                <div className="mt-4 rounded-md border border-green-200 bg-green-50 p-3">
-                  <p className="text-xs font-semibold uppercase tracking-wide text-green-700">
-                    Payout Calculation
+              {claim.denied_by && (
+                <p className="mt-1 text-xs text-red-600">
+                  Denied by: {claim.denied_by}
+                  {claim.denial_timestamp &&
+                    ` on ${formatTimestamp(claim.denial_timestamp)}`}
+                </p>
+              )}
+              {claim.denial_notes && (
+                <div className="mt-2 rounded-md border border-red-200 bg-white p-3">
+                  <p className="text-xs font-medium text-gray-500">
+                    Denial explanation:
                   </p>
-                  <div className="mt-2 space-y-1 font-mono text-sm text-green-800">
-                    <p>
-                      Damage estimate:{" "}
-                      <span className="font-semibold">
-                        ${claim.payout_calculation.damage_estimate.toLocaleString()}
-                      </span>
-                    </p>
-                    <p>
-                      Minus deductible:{" "}
-                      <span className="font-semibold">
-                        -${claim.payout_calculation.deductible.toLocaleString()}
-                      </span>
-                    </p>
-                    <div className="border-t border-green-300 pt-1">
-                      <p>
-                        Recommended payout:{" "}
-                        <span className="text-base font-bold">
-                          ${claim.payout_calculation.recommended_payout.toLocaleString()}
-                        </span>
+                  <p className="mt-1 text-sm text-gray-800">
+                    {claim.denial_notes}
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* AI Triage Decision — full view if not escalated, collapsible if escalated */}
+          {isEscalated ? (
+            <div className="rounded-md border border-gray-200">
+              <button
+                type="button"
+                onClick={() => setShowOriginal(!showOriginal)}
+                className="flex w-full items-center justify-between px-4 py-3 text-left text-sm font-semibold text-gray-600 hover:bg-gray-50"
+              >
+                <span>Original AI Recommendation</span>
+                <span className="text-xs text-gray-400">
+                  {showOriginal ? "Hide" : "Show"}
+                </span>
+              </button>
+              {showOriginal && (
+                <div className="border-t border-gray-200 p-4">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <p className="text-xs text-gray-500">Original Queue</p>
+                      <p className="text-sm font-medium text-gray-900">
+                        {claim.decision === "fast_track"
+                          ? "Fast-Track Queue"
+                          : claim.decision === "standard_review"
+                            ? "Standard Review Queue"
+                            : "Senior Review Queue"}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-gray-500">Recommended Adjuster</p>
+                      <p className="text-sm font-medium text-gray-900">
+                        {claim.recommended_adjuster}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-gray-500">Estimated Review Time</p>
+                      <p className="text-sm font-medium text-gray-900">
+                        {claim.estimated_review_time}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-gray-500">Confidence Score</p>
+                      <p className="text-sm font-medium text-gray-900">
+                        {(claim.confidence_score * 100).toFixed(0)}%
                       </p>
                     </div>
                   </div>
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="rounded-md border border-gray-200 p-4">
+              <h3 className="mb-3 text-sm font-semibold uppercase tracking-wide text-gray-500">
+                AI Triage Decision
+              </h3>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <p className="text-xs text-gray-500">Queue Assignment</p>
+                  <p className="text-sm font-medium text-gray-900">
+                    {claim.queue}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-xs text-gray-500">Recommended Adjuster</p>
+                  <p className="text-sm font-medium text-gray-900">
+                    {claim.recommended_adjuster}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-xs text-gray-500">Estimated Review Time</p>
+                  <p className="text-sm font-medium text-gray-900">
+                    {claim.estimated_review_time}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-xs text-gray-500">Confidence Score</p>
+                  <p className="text-sm font-medium text-gray-900">
+                    {(claim.confidence_score * 100).toFixed(0)}%
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* AI Triage Criteria */}
+          {claim.criteria_checks && claim.criteria_checks.length > 0 && (
+            <div className="rounded-md border border-gray-200">
+              <button
+                type="button"
+                onClick={() => setShowCriteria(!showCriteria)}
+                className="flex w-full items-center justify-between px-4 py-3 text-left hover:bg-gray-50"
+              >
+                <h3 className="text-sm font-semibold text-gray-700">
+                  AI Triage Criteria —{" "}
+                  {DECISION_LABELS[claim.decision] || "Standard Review"}
+                </h3>
+                <span className="text-gray-400">
+                  {showCriteria ? "\u25BC" : "\u25B6"}
+                </span>
+              </button>
+              {showCriteria && (
+                <div className="border-t border-gray-200 p-4">
+                  <div className="space-y-2">
+                    {claim.criteria_checks.map((check, i) => (
+                      <div
+                        key={i}
+                        className={`flex items-start gap-3 rounded-md px-3 py-2 text-sm ${
+                          check.passed
+                            ? "bg-green-50 text-green-800"
+                            : "bg-red-50 text-red-800"
+                        }`}
+                      >
+                        <span className="mt-0.5 flex-shrink-0 font-bold">
+                          {check.passed ? "\u2713" : "\u2717"}
+                        </span>
+                        <div>
+                          <span className="font-medium">{check.label}:</span>{" "}
+                          <span>{check.value}</span>
+                          <p className="text-xs opacity-70">{check.threshold}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Payout Calculation */}
+                  {claim.payout_calculation && (
+                    <div className="mt-4 rounded-md border border-green-200 bg-green-50 p-3">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-green-700">
+                        Payout Calculation
+                      </p>
+                      <div className="mt-2 space-y-1 font-mono text-sm text-green-800">
+                        <p>
+                          Damage estimate:{" "}
+                          <span className="font-semibold">
+                            ${claim.payout_calculation.damage_estimate.toLocaleString()}
+                          </span>
+                        </p>
+                        <p>
+                          Minus deductible:{" "}
+                          <span className="font-semibold">
+                            -${claim.payout_calculation.deductible.toLocaleString()}
+                          </span>
+                        </p>
+                        <div className="border-t border-green-300 pt-1">
+                          <p>
+                            Recommended payout:{" "}
+                            <span className="text-base font-bold">
+                              ${claim.payout_calculation.recommended_payout.toLocaleString()}
+                            </span>
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -352,7 +589,7 @@ function ClaimDetailModal({ claim, onClose }) {
             </ol>
           </div>
 
-          {/* Action Buttons - Role Based */}
+          {/* Action Buttons */}
           <div className="border-t border-gray-200 pt-4">
             <p className="mb-1 text-xs font-medium text-gray-500">
               Adjuster Actions
@@ -360,18 +597,79 @@ function ClaimDetailModal({ claim, onClose }) {
             <p className="mb-3 text-xs text-gray-400">
               Authorized for: {roleConfig.role}
             </p>
-            <div className="flex flex-wrap gap-2">
-              {roleConfig.actions.map((btn) => (
-                <button
-                  key={btn.label}
-                  type="button"
-                  onClick={() => handleAction(btn.action)}
-                  className={`rounded-md px-4 py-2 text-sm font-medium text-white ${btn.color}`}
-                >
-                  {btn.label}
-                </button>
-              ))}
-            </div>
+            {localStatus !== "Approved" && localStatus !== "Denied" ? (
+              <div className="flex flex-wrap gap-2">
+                {(localStatus === "Assigned" || localStatus === "Escalated") && (
+                  <>
+                    <button
+                      type="button"
+                      disabled={updating}
+                      onClick={() => handleStatusUpdate("In Review")}
+                      className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:bg-blue-300"
+                    >
+                      Mark In Review
+                    </button>
+                    {canEscalate && (
+                      <button
+                        type="button"
+                        disabled={updating}
+                        onClick={() => setShowEscalationModal(true)}
+                        className="rounded-md bg-yellow-600 px-4 py-2 text-sm font-medium text-white hover:bg-yellow-700 disabled:bg-yellow-300"
+                      >
+                        Escalate
+                      </button>
+                    )}
+                    <p className="w-full text-xs text-gray-400">
+                      Mark as In Review before approving or denying
+                    </p>
+                  </>
+                )}
+                {localStatus === "In Review" && (
+                  <>
+                    <button
+                      type="button"
+                      disabled={updating}
+                      onClick={() => handleStatusUpdate("Approved")}
+                      className="rounded-md bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-700 disabled:bg-green-300"
+                    >
+                      Approve Claim
+                    </button>
+                    <button
+                      type="button"
+                      disabled={updating}
+                      onClick={() => setShowDenialModal(true)}
+                      className="rounded-md bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:bg-red-300"
+                    >
+                      Deny Claim
+                    </button>
+                    {canEscalate && (
+                      <button
+                        type="button"
+                        disabled={updating}
+                        onClick={() => setShowEscalationModal(true)}
+                        className="rounded-md bg-yellow-600 px-4 py-2 text-sm font-medium text-white hover:bg-yellow-700 disabled:bg-yellow-300"
+                      >
+                        Escalate
+                      </button>
+                    )}
+                  </>
+                )}
+                {!canEscalate && claim.queue === "Senior Review Queue" && (
+                  <span className="px-2 py-2 text-xs italic text-gray-500">
+                    Highest escalation level
+                  </span>
+                )}
+              </div>
+            ) : (
+              <div className="rounded-md border border-gray-200 bg-gray-50 p-4 text-center">
+                <p className="text-sm font-medium text-gray-700">
+                  Claim has been {localStatus.toLowerCase()}
+                </p>
+                <p className="mt-1 text-xs text-gray-500">
+                  No further actions available
+                </p>
+              </div>
+            )}
           </div>
 
           {/* Regulatory Compliance Disclaimer */}
@@ -401,8 +699,172 @@ function ClaimDetailModal({ claim, onClose }) {
               approve or modify this recommendation before any action is taken.
             </p>
           </div>
+
+          {/* Supporting Documentation */}
+          <div className="border-t border-gray-200 pt-6">
+            <h3 className="mb-3 text-sm font-medium text-gray-700">
+              Supporting Documentation
+            </h3>
+            <div
+              title={"In production: Opens " + claim.claim_id + " in your existing claims management system (Guidewire, Duck Creek, etc.)"}
+              className="w-full cursor-help rounded-lg border-2 border-dashed border-gray-300 bg-gray-50 px-4 py-3 text-left hover:bg-gray-100"
+            >
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium text-gray-900">
+                    View Full Claim in Claims Management System
+                  </p>
+                  <p className="text-xs text-gray-600">
+                    Photos, documents, repair estimates, full history
+                  </p>
+                </div>
+                <span className="text-xl text-gray-400">&#8594;</span>
+              </div>
+            </div>
+            <p className="mt-2 px-1 text-xs italic text-gray-400">
+              In production, this links directly to the claim record in your
+              existing system. AI provides triage recommendations; your system
+              maintains all documentation.
+            </p>
+          </div>
         </div>
       </div>
+
+      {/* Denial Modal */}
+      {showDenialModal && (
+        <div
+          className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) {
+              setShowDenialModal(false);
+              setDenialCode("Coverage Exclusion");
+              setDenialNotes("");
+            }
+          }}
+        >
+          <div className="w-full max-w-lg rounded-lg bg-white p-6 shadow-xl">
+            <h2 className="text-lg font-bold text-gray-900">
+              Deny Claim {claim.claim_id}
+            </h2>
+            <p className="mt-1 text-sm text-gray-500">
+              This decision is recorded in the audit log.
+            </p>
+            <div className="mt-4">
+              <label className="block text-sm font-medium text-gray-700">
+                Denial Reason Code *
+              </label>
+              <select
+                value={denialCode}
+                onChange={(e) => setDenialCode(e.target.value)}
+                className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-red-500 focus:outline-none focus:ring-1 focus:ring-red-500"
+              >
+                <option value="Coverage Exclusion">Coverage Exclusion</option>
+                <option value="Fraud Suspected">Fraud Suspected</option>
+                <option value="Insufficient Documentation">Insufficient Documentation</option>
+                <option value="Duplicate Claim">Duplicate Claim</option>
+                <option value="Policy Not Active">Policy Not Active</option>
+                <option value="Claim Amount Exceeds Policy Limit">Claim Amount Exceeds Policy Limit</option>
+                <option value="Pre-Existing Damage">Pre-Existing Damage</option>
+                <option value="Other">Other</option>
+              </select>
+            </div>
+            <div className="mt-4">
+              <label className="block text-sm font-medium text-gray-700">
+                Detailed Explanation *
+              </label>
+              <textarea
+                value={denialNotes}
+                onChange={(e) => setDenialNotes(e.target.value)}
+                placeholder="Provide detailed explanation for the denial decision. Include relevant policy sections, documentation issues, or investigation findings."
+                rows="4"
+                className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-red-500 focus:outline-none focus:ring-1 focus:ring-red-500"
+              />
+              <p className="mt-1 text-xs text-gray-400">
+                This explanation will be visible in the audit log and claim
+                history
+              </p>
+            </div>
+            <div className="mt-4 flex gap-3">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowDenialModal(false);
+                  setDenialCode("Coverage Exclusion");
+                  setDenialNotes("");
+                }}
+                className="flex-1 rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={!denialNotes.trim() || updating}
+                onClick={handleDeny}
+                className="flex-1 rounded-md bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:bg-gray-300"
+              >
+                Confirm Denial
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Escalation Notes Modal */}
+      {showEscalationModal && (
+        <div
+          className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) {
+              setShowEscalationModal(false);
+              setEscalationNotes("");
+            }
+          }}
+        >
+          <div className="w-full max-w-lg rounded-lg bg-white p-6 shadow-xl">
+            <h2 className="text-lg font-bold text-gray-900">
+              Escalate to {targetQueue}
+            </h2>
+            <p className="mt-1 text-sm text-gray-500">
+              This claim will be moved and assigned to the appropriate adjuster.
+            </p>
+            <div className="mt-4">
+              <label className="block text-sm font-medium text-gray-700">
+                Why are you escalating this claim? *
+              </label>
+              <textarea
+                value={escalationNotes}
+                onChange={(e) => setEscalationNotes(e.target.value)}
+                placeholder="Example: Customer disputes fault determination — need senior review of police report and witness statements"
+                rows="4"
+                className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-yellow-500 focus:outline-none focus:ring-1 focus:ring-yellow-500"
+              />
+              <p className="mt-1 text-xs text-gray-400">
+                This note will be visible to the next adjuster
+              </p>
+            </div>
+            <div className="mt-4 flex gap-3">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowEscalationModal(false);
+                  setEscalationNotes("");
+                }}
+                className="flex-1 rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={!escalationNotes.trim() || updating}
+                onClick={handleEscalate}
+                className="flex-1 rounded-md bg-yellow-600 px-4 py-2 text-sm font-medium text-white hover:bg-yellow-700 disabled:cursor-not-allowed disabled:bg-gray-300"
+              >
+                Confirm Escalation
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
