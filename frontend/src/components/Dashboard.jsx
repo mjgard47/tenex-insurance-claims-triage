@@ -284,12 +284,11 @@ function Dashboard({ refreshTrigger, currentProfile }) {
               Time Saved on Triage & Assignment
             </p>
             <p className="mt-2 text-4xl font-bold text-green-900">
-              {metrics.time_saved_hours} hrs
+              {metrics.time_saved_hours} hours
             </p>
-            <div className="mt-2 space-y-0.5 text-xs text-green-700">
-              <p>Manual: {metrics.time_saved_hours} hrs (25 min x {metrics.total_processed} claims)</p>
-              <p>AI: ~{Math.ceil(metrics.total_processed * 1.2)} sec ({metrics.avg_processing_time}s x {metrics.total_processed} claims)</p>
-            </div>
+            <p className="mt-2 text-xs text-green-700">
+              AI triage: ~{metrics.avg_processing_time} sec avg &nbsp;|&nbsp; Manual triage: ~25 min avg
+            </p>
           </div>
         </div>
 
