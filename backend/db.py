@@ -167,15 +167,15 @@ def get_processed_claims_by_queue(queue_type: str) -> list[dict]:
 
 
 def get_triage_only_roi(total: int) -> dict:
-    """Conservative ROI: 15 min saved per claim (triage decision only)."""
-    time_saved = round(total * 0.25, 1)
-    cost_saved = round(time_saved * 50, 0)
-    annual = round(0.25 * 50 * 10000 * 12, 0) if total > 0 else 0
+    """Triage-Only ROI: 25 min saved per claim (triage + assignment)."""
+    time_saved = round(total * 0.4167, 1)
+    cost_saved = round(time_saved * 60, 0)
+    annual = round(0.4167 * 60 * 10000 * 12, 0) if total > 0 else 0
     return {
         "time_saved_hours": time_saved,
         "cost_saved_monthly": cost_saved,
         "annual_savings": annual,
-        "assumptions": {"minutes_per_claim": 15, "hourly_rate": 50, "claims_per_month_at_scale": 10000},
+        "assumptions": {"minutes_per_claim": 25, "hourly_rate": 60, "claims_per_month_at_scale": 10000},
     }
 
 
@@ -206,10 +206,10 @@ def get_dashboard_metrics() -> dict:
     ).fetchall()
     queue_distribution = {row["queue"]: row["count"] for row in queue_rows}
 
-    # Each claim saves ~2 hours of manual intake triage
-    time_saved_hours = round(total * 2.0, 1)
-    # Average adjuster cost ~$35/hour, so 2 hours saved = $70 per claim
-    cost_saved_dollars = round(total * 70.0, 2)
+    # Each claim saves 25 min (0.4167 hours) on triage & assignment
+    time_saved_hours = round(total * 0.4167, 1)
+    # $60/hour adjuster cost * 25 min = $25 per claim
+    cost_saved_dollars = round(total * 25.0, 2)
 
     # Status breakdown
     status_rows = conn.execute(

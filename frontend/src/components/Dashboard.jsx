@@ -281,13 +281,13 @@ function Dashboard({ refreshTrigger, currentProfile }) {
             style={{ backgroundColor: "#F0FDF4", borderLeft: "4px solid #16A34A" }}
           >
             <p className="text-sm font-semibold uppercase tracking-wide text-green-800">
-              Time Saved
+              Time Saved on Triage & Adjuster Assignment
             </p>
             <p className="mt-2 text-4xl font-bold text-green-900">
               {metrics.time_saved_hours} hours
             </p>
             <p className="mt-2 text-xs text-green-700">
-              AI triage: ~{metrics.avg_processing_time} sec avg &nbsp;|&nbsp; Manual triage: ~15 min avg
+              AI triage: ~{metrics.avg_processing_time} sec avg &nbsp;|&nbsp; Manual triage: ~25 min avg
             </p>
           </div>
         </div>
