@@ -281,14 +281,15 @@ function Dashboard({ refreshTrigger, currentProfile }) {
             style={{ backgroundColor: "#F0FDF4", borderLeft: "4px solid #16A34A" }}
           >
             <p className="text-sm font-semibold uppercase tracking-wide text-green-800">
-              Time Saved on Triage & Adjuster Assignment
+              Time Saved on Triage & Assignment
             </p>
             <p className="mt-2 text-4xl font-bold text-green-900">
-              {metrics.time_saved_hours} hours
+              {metrics.time_saved_hours} hrs
             </p>
-            <p className="mt-2 text-xs text-green-700">
-              AI triage: ~{metrics.avg_processing_time} sec avg &nbsp;|&nbsp; Manual triage: ~25 min avg
-            </p>
+            <div className="mt-2 space-y-0.5 text-xs text-green-700">
+              <p>Manual: {metrics.time_saved_hours} hrs (25 min x {metrics.total_processed} claims)</p>
+              <p>AI: ~{Math.ceil(metrics.total_processed * 1.2)} sec ({metrics.avg_processing_time}s x {metrics.total_processed} claims)</p>
+            </div>
           </div>
         </div>
 
@@ -359,76 +360,7 @@ function Dashboard({ refreshTrigger, currentProfile }) {
           </div>
         </div>
 
-        {/* Row 3: Dual ROI */}
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          {/* Triage-Only ROI */}
-          <div className="rounded-lg border-2 border-blue-300 bg-blue-50 p-5">
-            <p className="text-xs font-bold uppercase tracking-wide text-blue-900">
-              Triage-Only ROI
-            </p>
-            <p className="mt-3 text-3xl font-bold text-blue-900">
-              ${(metrics.triage_only_roi?.annual_savings || 0).toLocaleString()}
-            </p>
-            <p className="text-sm font-medium text-blue-800">
-              Projected Annual Savings
-            </p>
-            <div className="mt-3 space-y-1 rounded-md bg-white/60 p-2 text-xs">
-              <div className="flex justify-between text-blue-700">
-                <span>Time saved per claim:</span>
-                <span className="font-semibold text-blue-900">15 minutes</span>
-              </div>
-              <div className="flex justify-between text-blue-700">
-                <span>This month:</span>
-                <span className="font-semibold text-blue-900">
-                  ${(metrics.triage_only_roi?.cost_saved_monthly || 0).toLocaleString()}
-                </span>
-              </div>
-              <div className="flex justify-between text-blue-700">
-                <span>At scale:</span>
-                <span className="font-semibold text-blue-900">10K claims/mo</span>
-              </div>
-            </div>
-            <p className="mt-2 text-xs text-blue-600">
-              <span className="font-semibold">Scope:</span> AI routing decision
-              replaces manual form review and complexity assessment.
-            </p>
-          </div>
-
-          {/* Triage + Workflow Automation ROI */}
-          <div className="rounded-lg border-2 border-green-300 bg-green-50 p-5">
-            <p className="text-xs font-bold uppercase tracking-wide text-green-900">
-              Triage + Workflow Automation ROI
-            </p>
-            <p className="mt-3 text-3xl font-bold text-green-900">
-              ${(metrics.full_integration_roi?.annual_savings || 0).toLocaleString()}
-            </p>
-            <p className="text-sm font-medium text-green-800">
-              Projected Annual Savings
-            </p>
-            <div className="mt-3 space-y-1 rounded-md bg-white/60 p-2 text-xs">
-              <div className="flex justify-between text-green-700">
-                <span>Time saved per claim:</span>
-                <span className="font-semibold text-green-900">2 hours</span>
-              </div>
-              <div className="flex justify-between text-green-700">
-                <span>This month:</span>
-                <span className="font-semibold text-green-900">
-                  ${(metrics.full_integration_roi?.cost_saved_monthly || 0).toLocaleString()}
-                </span>
-              </div>
-              <div className="flex justify-between text-green-700">
-                <span>At scale:</span>
-                <span className="font-semibold text-green-900">10K claims/mo</span>
-              </div>
-            </div>
-            <p className="mt-2 text-xs text-green-600">
-              <span className="font-semibold">Scope:</span> Triage +
-              auto-assignment + documentation routing + adjuster handoff.
-            </p>
-          </div>
-        </div>
-
-        {/* Row 4: Speed + Decision Time + Escalation Rate + AI Accuracy */}
+        {/* Row 3: Speed + Decision Time + Escalation Rate + AI Accuracy */}
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <div className="rounded-lg border border-gray-200 bg-white p-5 shadow-sm">
             <p className="text-xs font-medium uppercase tracking-wide text-gray-500">
