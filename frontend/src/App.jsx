@@ -47,10 +47,10 @@ function App() {
                 className="text-xl font-bold"
                 style={{ color: "#1E3A5F" }}
               >
-                Insurance Claims Triage
+                ClaimFlow
               </h1>
               <p className="text-xs text-gray-500">
-                AI-powered claims processing by Tenex
+                AI-Powered Claims Triage
               </p>
             </div>
             <div className="hidden border-l border-gray-300 pl-4 sm:flex sm:items-center sm:gap-2">

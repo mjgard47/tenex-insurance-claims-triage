@@ -1,6 +1,6 @@
-# Tenex - Insurance Claims Triage System
+# ClaimFlow — AI Insurance Claims Triage
 
-AI-powered claims triage prototype built as a Tenex AI Strategist engagement demonstration.
+ClaimFlow is an AI-powered claims triage system that automatically routes auto insurance collision claims to the correct adjuster queue based on deterministic risk assessment and fraud detection. Built as a Tenex AI Strategist engagement demonstration.
 
 **Status:** In development
 
