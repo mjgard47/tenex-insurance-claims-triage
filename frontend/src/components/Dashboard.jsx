@@ -393,13 +393,13 @@ function Dashboard({ refreshTrigger, currentProfile }) {
           </div>
           <div className="rounded-lg border border-gray-200 bg-white p-5 shadow-sm">
             <p className="text-xs font-medium uppercase tracking-wide text-gray-500">
-              AI Routing Accuracy
+              AI-Human Alignment
             </p>
             <p className="mt-2 text-2xl font-bold text-gray-900">
               {metrics.fast_track_success_rate?.rate || 0}%
             </p>
             <p className="mt-1 text-xs text-gray-500">
-              fast-track claims approved as routed
+              Fast-track claims approved as AI recommended
             </p>
           </div>
         </div>
